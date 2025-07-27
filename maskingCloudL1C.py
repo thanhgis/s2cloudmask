@@ -104,14 +104,14 @@ def applyCloudMasking(product_name, process_dir, epsg_code, progress_dialog=None
                 'OPTIONS': '',
                 'DATA_TYPE': 3,
                 'TARGET_EXTENT': crop_extent,
-                'TARGET_EXTENT_CRS': None,
+                'TARGET_EXTENT_CRS': target_crs,
                 'MULTITHREADING': False,
                 'EXTRA': '',
                 'OUTPUT': output_path
             }, feedback=QgsProcessingFeedback())
             
             processed_bands[band_code] = output_path
-            
+  
         except Exception as e:
             processed_bands[band_code] = band_path
 

@@ -22,7 +22,7 @@
  ***************************************************************************/
 """
 
-
+import qgis
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt, QDate, QTimer, QT_VERSION_STR
 from qgis.PyQt.QtGui import QIcon, QTextCharFormat, QColor, QFont
 from qgis.PyQt.QtWidgets import QAction, QMessageBox, QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QHeaderView, QLabel, QProgressBar, QApplication
@@ -35,6 +35,10 @@ import os.path, datetime, requests, json, processing
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict
+from osgeo import gdal 
+from .maskingCloudL1C import applyCloudMasking
+from .downloadBands import downloadL1CBands
+from .mosaic import SimpleSentinel2Mosaic
 
 # Safe imports for optional dependencies
 try:
@@ -171,6 +175,7 @@ class s2CloudMask:
         self.products_list = [] 
         self.access_token = None
         self.dependencies_checked = False
+        self.qgisVersion = qgis.core.Qgis.QGIS_VERSION_INT
 
     def check_dependencies(self):
         """Check and install dependencies if needed"""
@@ -182,7 +187,6 @@ class s2CloudMask:
         
         # Check if dependencies are missing
         missing_deps = install_dependencies.get_missing_dependencies()
-        print ('MISSING DEP = ', missing_deps)
         if missing_deps:
             # Show message about missing dependencies
             package_list = "\n".join([f"- {pkg[0]}" for pkg in missing_deps])
@@ -354,6 +358,30 @@ class s2CloudMask:
                     cdseSecret = ''
         return [cdseId, cdseSecret]
 
+    def _connect_buttons_for_scene_mode(self):
+        """Helper method to connect buttons for single scene mode"""
+        try:
+            self.dockwidget.previewButton.clicked.disconnect()
+            self.dockwidget.acceptButton.clicked.disconnect()
+            self.dockwidget.cancelButton.clicked.disconnect()
+        except TypeError:
+            pass
+        
+        self.dockwidget.previewButton.clicked.connect(self.previewImage)
+        self.dockwidget.acceptButton.clicked.connect(self.cloudMasking)
+        self.dockwidget.cancelButton.clicked.connect(self.onCancel)
+
+    def _connect_buttons_for_mosaic_mode(self):
+        """Helper method to connect buttons for mosaic mode"""
+        try:
+            self.dockwidget.previewButton.clicked.disconnect()
+            self.dockwidget.acceptButton.clicked.disconnect()
+        except TypeError:
+            pass
+        
+        self.dockwidget.previewButton.clicked.connect(self.previewImageList)
+        self.dockwidget.acceptButton.clicked.connect(self.cloudMosaic)
+
     def run(self):
         """Run method that loads and starts the plugin"""
        # Check dependencies first
@@ -382,6 +410,10 @@ class s2CloudMask:
         self.dockwidget.acceptButton.setEnabled(False)
         self.dockwidget.sceneComboBox.setCurrentIndex(0)
         self.dockwidget.sceneComboBox.currentIndexChanged.connect(self.onSceneSelection)
+        try:
+            self.dockwidget.cancelButton.clicked.disconnect()
+        except TypeError:
+            pass
         self.dockwidget.cancelButton.clicked.connect(self.onCancel)
         self.dockwidget.closingPlugin.connect(self.onClosePlugin)
         self.dockwidget.calendarWidget.currentPageChanged.connect(self.onCalendarChanged)
@@ -408,6 +440,8 @@ class s2CloudMask:
         if selectedMethod == 1: 
             self.dockwidget.dateFromEdit.setDate(QDate(year, month, day))
             self.setupCalendarScene(date_range)
+        self.start_date = date_range[0]
+        self.end_date = date_range[1]
 
     def onDateSelected(self, date):
         selectedMethod = self.dockwidget.sceneComboBox.currentIndex()
@@ -421,6 +455,12 @@ class s2CloudMask:
                 self.dockwidget.previewButton.setEnabled(True)
                 self.dockwidget.acceptButton.setEnabled(True)
                 self.dockwidget.dateFromEdit.setDate(QDate(date))
+                try:
+                    self.dockwidget.previewButton.clicked.disconnect()
+                    self.dockwidget.acceptButton.clicked.disconnect()
+                    self.dockwidget.cancelButton.clicked.disconnect()
+                except TypeError:
+                    pass
                 self.dockwidget.previewButton.clicked.connect(self.previewImage)
                 self.dockwidget.acceptButton.clicked.connect(self.cloudMasking)
                 self.dockwidget.cancelButton.clicked.connect(self.onCancel)
@@ -437,6 +477,10 @@ class s2CloudMask:
             elif self.qtVersion == 6: 
                 self.dockwidget.calendarWidget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.dockwidget.calendarWidget.customContextMenuRequested.connect(self.on_right_click)
+            try:
+                self.dockwidget.acceptButton.clicked.disconnect()
+            except TypeError:
+                pass
             self.dockwidget.acceptButton.clicked.connect(self.cloudMosaic)
             """Handle date clicks for interactive range selection"""
             if self.is_selecting_start:
@@ -454,6 +498,10 @@ class s2CloudMask:
                 self.is_selecting_start = False
                 self.highlight_dates()
                 self.update_range_label()
+                date_minmax = [self.start_date, self.end_date]
+                #self.cached_date_minmax = date_minmax.copy() if hasattr(date_minmax, 'copy') else list(date_minmax)
+                print ('Date Min Max', date_minmax)
+                self.setupCalendarMosaic(date_minmax)
 
     def searchS2ByDateExtent(self, start_date, end_date, bbox):
         date_range = f"{start_date}/{end_date}"
@@ -665,7 +713,7 @@ class s2CloudMask:
                 current_date = current_date.addDays(1)
         elif self.start_date:
             self.dockwidget.calendarWidget.setDateTextFormat(self.start_date, self.start_format)
-    
+
     def update_range_label(self):
         if self.start_date and self.end_date:
             start_str = self.start_date.toString("MMM dd, yyyy")
@@ -755,9 +803,11 @@ class s2CloudMask:
         return best_item if best_item else items_group[0]
     
     def setupCalendarMosaic(self, date_minmax):
+        self.image_info = []
         min_date = date_minmax[0].toString("yyyy-MM-dd")
         max_date = date_minmax[1].toString("yyyy-MM-dd")
         date_range = f"{min_date}/{max_date}"
+        print ('DATE RANGE', date_range)
         if not self.cdseId or self.cdseId == '': 
             self.cdseId = self.dockwidget.idLineEdit.text()
         if not self.cdseSecret or self.cdseSecret == '': 
@@ -829,6 +879,13 @@ class s2CloudMask:
             elif self.qtVersion == 5: 
                 fmt.setFontWeight(QFont.Bold)
             self.dockwidget.calendarWidget.setDateTextFormat(qdate, fmt)
+
+        try:
+            self.dockwidget.acceptButton.clicked.disconnect()
+            self.dockwidget.previewButton.clicked.disconnect()
+        except TypeError:
+            # No connections exist yet, which is fine
+            pass
 
         self.dockwidget.previewButton.setEnabled(True)
         self.dockwidget.acceptButton.setEnabled(True)
@@ -940,7 +997,7 @@ class s2CloudMask:
     def cloudMosaic(self):
         progress_dialog = DownloadProgressDialog(self.iface.mainWindow())
         progress_dialog.show()
-
+        
         if not self.cdseId or self.cdseId == '': 
             self.cdseId = self.dockwidget.idLineEdit.text()
         if not self.cdseSecret or self.cdseSecret == '': 
@@ -1073,7 +1130,11 @@ class s2CloudMask:
             # Translate and scale
             progress_dialog.set_detail("Finalizing TCI image")
             progress_dialog.set_value(current_step)
-            
+            if self.qgisVersion < 31400: 
+                dtype_tci = 0
+            else: 
+                dtype_tci = 1
+
             processing.run("gdal:translate", {
                 'INPUT': temp_tci.replace('.tif', '_temp.tif'),
                 'TARGET_CRS': None,
@@ -1081,16 +1142,16 @@ class s2CloudMask:
                 'COPY_SUBDATASETS': False,
                 'OPTIONS': 'COMPRESS=LZW',
                 'EXTRA': '-scale 0 10000 0 255',
-                'DATA_TYPE': 1,
+                'DATA_TYPE': dtype_tci,
                 'OUTPUT': temp_tci
             }, feedback=QgsProcessingFeedback())
 
             tci = QgsRasterLayer(temp_tci, f'{start}_{end}_TCI')
             QgsProject.instance().addMapLayer(tci)
 
-            for file in masked_temp_files:
-                if os.path.exists(file):
-                    os.remove(file)
+            # for file in masked_temp_files:
+            #     if os.path.exists(file):
+            #         os.remove(file)
 
             progress_dialog.set_value(total_steps)
             progress_dialog.set_status("Processing complete!")
@@ -1184,6 +1245,7 @@ class s2CloudMask:
                 matches = list(scene_path.glob(pattern))
                 if matches:
                     masked_band_files.append(str(matches[0]))
+
             output_vrt = os.path.join(greenness_dir, f"{greenness_name}.vrt")
             final_output_tif = os.path.join(greenness_dir, f"{greenness_name}.tif")
             processing.run("gdal:buildvirtualraster", {
@@ -1236,6 +1298,10 @@ class s2CloudMask:
                 'RESAMPLING': 0,
                 'OUTPUT': temp_tci.replace('.vrt', '_temp.vrt')
             }, feedback=QgsProcessingFeedback())
+            if self.qgisVersion < 31400: 
+                dtype_tci = 0
+            else: 
+                dtype_tci = 1
 
             processing.run("gdal:translate", {
                 'INPUT': temp_tci.replace('.vrt', '_temp.vrt'),
@@ -1244,7 +1310,7 @@ class s2CloudMask:
                 'COPY_SUBDATASETS': False,
                 'OPTIONS': 'COMPRESS=LZW',
                 'EXTRA': '-scale 0 10000 0 255',
-                'DATA_TYPE': 1,
+                'DATA_TYPE': dtype_tci,
                 'OUTPUT': temp_tci
             }, feedback=QgsProcessingFeedback())
 

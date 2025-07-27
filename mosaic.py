@@ -80,26 +80,10 @@ class SimpleSentinel2Mosaic:
         }
     
     def mosaic_band_median(self, image_paths, band_name, output_path, pixel_size = 10, nodata_value = 0):
-        """
-        Create median mosaic using a more robust approach
-        """
-        # Get reference grid
         ref_info = self.create_reference_grid(image_paths, pixel_size)
-        
-        print(f"Reference grid: {ref_info['width']}x{ref_info['height']}")
-        print(f"Bounds: {ref_info['bounds']}")
-        
-        # Initialize list to store arrays
         arrays = []
-        
-        # Process each image
         for i, img_path in enumerate(image_paths):
-            print(f"Processing {i+1}/{len(image_paths)}: {os.path.basename(img_path)}")
-            
-            # Create temporary warped file
             temp_path = os.path.join(self.temp_dir, f"temp_{i}_{band_name}.tif")
-            print ('TEMP PATH: ', temp_path)
-            # Warp to reference grid
             warp_options = gdal.WarpOptions(
                 format='GTiff',
                 outputBounds=ref_info['bounds'],
@@ -114,16 +98,12 @@ class SimpleSentinel2Mosaic:
             
             try:
                 gdal.Warp(temp_path, img_path, options=warp_options)
-                
-                # Read the warped data
                 ds = gdal.Open(temp_path)
                 if ds is not None:
                     array = ds.ReadAsArray()
                     if array is not None and array.shape == (ref_info['height'], ref_info['width']):
-                        # Mask nodata values
                         masked_array = np.ma.masked_equal(array, nodata_value)
                         arrays.append(masked_array)
-                        print(f"  Added array with shape: {array.shape}")
                     else:
                         print(f"  Skipped: Invalid array shape")
                     ds = None
@@ -139,9 +119,7 @@ class SimpleSentinel2Mosaic:
         
         if not arrays:
             raise ValueError("No valid arrays found for mosaicking")
-        
-        print(f"Computing median from {len(arrays)} arrays")
-        
+               
         # Stack and compute median
         stacked = np.ma.stack(arrays, axis=0)
         median_result = np.ma.median(stacked, axis=0)
@@ -163,15 +141,11 @@ class SimpleSentinel2Mosaic:
         out_ds.SetGeoTransform(ref_info['geotransform'])
         out_ds.SetProjection(ref_info['projection'])
         out_ds.GetRasterBand(1).WriteArray(final_result)
-        out_ds.GetRasterBand(1).SetNoDataValue(nodata_value)
-        
+        out_ds.GetRasterBand(1).SetNoDataValue(nodata_value)       
         out_ds = None
-        print(f"Created mosaic: {output_path}")
     
     def process_all_bands(self, scene_directories, output_name="mosaic"):
-        """Process all bands for mosaicking"""
         bands_by_name = {}
-        
         # Collect files by band
         for scene_dir in scene_directories:
             scene_path = Path(scene_dir)
@@ -188,9 +162,7 @@ class SimpleSentinel2Mosaic:
         
         for band_name, file_paths in bands_by_name.items():
             if len(file_paths) >= 2:  # Need at least 2 files for mosaic
-                print(f"\nProcessing band {band_name} with {len(file_paths)} files")
                 output_path = self.output_dir / f"{output_name}_{band_name}_median.tif"
-                
                 try:
                     self.mosaic_band_median(file_paths, band_name, str(output_path))
                     mosaic_files[band_name] = str(output_path)
@@ -233,6 +205,4 @@ class SimpleSentinel2Mosaic:
         # Clean up
         if os.path.exists(vrt_path):
             os.remove(vrt_path)
-        
-        print(f"Created composite: {output_path}")
 
