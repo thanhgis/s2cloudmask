@@ -77,9 +77,11 @@ Enter your Copernicus Data Space Ecosystem credentials when prompted:
 ### 2. Select Date Range
 
 **Calendar Monthly View**: Dates with available imagery are highlighted
+
 ![Calendar Monthly View](images/calendar-monthly.png)
 
 **Custom Date Range**: Click two dates to select range
+
 ![Custom Date Range](images/calendar-custom.png)
 
 ### 3. Process Images
@@ -116,6 +118,7 @@ If you see CDSE connection warnings:
 - **Issues**: Report bugs on [GitHub Issues](https://github.com/thanhgis/s2cloudmask/issues)
 - **Documentation**: Refer to the [detailed manual](manual/QuickManual_S2CloudMask.docx)
 - **CDSE Account**: [Registration help](https://dataspace.copernicus.eu/)
+- **Bugs/errors reporting or further discussions**: [Email to](thanh@vnforest.org)
 
 ## 📄 License
 
@@ -125,6 +128,3 @@ This plugin is open source. Check the repository for license details.
 
 *For detailed step-by-step instructions with screenshots, please download the [Complete User Manual](manual/QuickManual_S2CloudMask.docx).*
 
-## Support
-
-For bugs/errors reporting or further discussions, feel free to email to **thanh@vnforest.org**
