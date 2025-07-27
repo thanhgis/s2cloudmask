@@ -1,4 +1,4 @@
-# S2CloudMask - QGIS Plugin
+# Cloud Mask Sentinel-2 - QGIS Plugin
 
 A QGIS plugin for cloud masking of Sentinel-2 satellite imagery using advanced machine learning algorithms.
 
