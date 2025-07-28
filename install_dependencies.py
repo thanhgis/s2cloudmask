@@ -3,7 +3,7 @@ import os, platform, sys
 import subprocess
 import importlib.util
 import ctypes
-from qgis.PyQt.QtCore import QObject, pyqtSignal, QThread
+from qgis.PyQt.QtCore import QObject, pyqtSignal, QThread, QT_VERSION_STR
 from qgis.PyQt.QtWidgets import QProgressDialog, QMessageBox, QApplication
 from qgis.core import QgsMessageLog, Qgis
 
@@ -16,7 +16,7 @@ class DependencyInstaller(QObject):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        
+        self.qtVersion = int(QT_VERSION_STR.split('.')[0])
         # Get Python version info
         self.py = sys.version_info
         
@@ -188,17 +188,30 @@ class DependencyInstaller(QObject):
         
         # Show confirmation dialog
         package_list = "\n".join([f"- {pkg[0]} {pkg[1] or 'latest'}" for pkg in missing_packages])
-        reply = QMessageBox.question(
-            parent_widget,
-            "Install Dependencies",
-            f"The following packages need to be installed:\n\n{package_list}\n\nProceed with installation?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
-        )
-        
-        if reply != QMessageBox.Yes:
-            return False
-        
+
+        if self.qtVersion == 5: 
+            reply = QMessageBox.question(
+                parent_widget,
+                "Install Dependencies",
+                f"The following packages need to be installed:\n\n{package_list}\n\nProceed with installation?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply != QMessageBox.Yes:
+                return False
+        elif self.qtVersion == 6: 
+            reply = QMessageBox.question(
+                parent_widget,
+                "Install Dependencies",
+                f"The following packages need to be installed:\n\n{package_list}\n\nProceed with installation?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            
+            if reply != QMessageBox.StandardButton.Yes:
+                return False
+
         # Create and show progress dialog (add 1 for pip upgrade step)
         progress_dialog = QProgressDialog("Upgrading pip...", "Cancel", 0, len(missing_packages) + 1, parent_widget)
         progress_dialog.setWindowTitle("s2CloudMask - Installing Dependencies")

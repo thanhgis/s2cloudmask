@@ -190,35 +190,66 @@ class s2CloudMask:
         if missing_deps:
             # Show message about missing dependencies
             package_list = "\n".join([f"- {pkg[0]}" for pkg in missing_deps])
-            reply = QMessageBox.question(
-                self.iface.mainWindow(),
-                "Missing Dependencies",
-                f"s2CloudMask requires the following Python packages:\n\n{package_list}\n\n"
-                "Would you like to install them now?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
-            )
-            
-            if reply == QMessageBox.Yes:
-                success = install_dependencies.check_and_install_dependencies(self.iface.mainWindow())
-                if not success:
-                    QMessageBox.critical(
+            if self.qtVersion == 5: 
+                reply = QMessageBox.question(
+                    self.iface.mainWindow(),
+                    "Missing Dependencies",
+                    f"s2CloudMask requires the following Python packages:\n\n{package_list}\n\n"
+                    "Would you like to install them now?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes:
+                    success = install_dependencies.check_and_install_dependencies(self.iface.mainWindow())
+                    if not success:
+                        QMessageBox.critical(
+                            self.iface.mainWindow(),
+                            "Installation Failed",
+                            "Failed to install required dependencies. The plugin may not work correctly."
+                        )
+                        return False
+                    else:
+                        # Re-import modules after installation
+                        self._reimport_dependencies()
+                else:
+                    QMessageBox.warning(
                         self.iface.mainWindow(),
-                        "Installation Failed",
-                        "Failed to install required dependencies. The plugin may not work correctly."
+                        "Dependencies Required",
+                        "The plugin requires these dependencies to function properly. "
+                        "Some features may not work without them."
                     )
                     return False
-                else:
-                    # Re-import modules after installation
-                    self._reimport_dependencies()
-            else:
-                QMessageBox.warning(
+            elif self.qtVersion == 6: 
+                reply = QMessageBox.question(
                     self.iface.mainWindow(),
-                    "Dependencies Required",
-                    "The plugin requires these dependencies to function properly. "
-                    "Some features may not work without them."
+                    "Missing Dependencies",
+                    f"s2CloudMask requires the following Python packages:\n\n{package_list}\n\n"
+                    "Would you like to install them now?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
                 )
-                return False
+
+                if reply == QMessageBox.StandardButton.Yes:
+                    success = install_dependencies.check_and_install_dependencies(self.iface.mainWindow())
+                    if not success:
+                        QMessageBox.critical(
+                            self.iface.mainWindow(),
+                            "Installation Failed",
+                            "Failed to install required dependencies. The plugin may not work correctly."
+                        )
+                        return False
+                    else:
+                        # Re-import modules after installation
+                        self._reimport_dependencies()
+                else:
+                    QMessageBox.warning(
+                        self.iface.mainWindow(),
+                        "Dependencies Required",
+                        "The plugin requires these dependencies to function properly. "
+                        "Some features may not work without them."
+                    )
+                    return False
         
         self.dependencies_checked = True
         return True
