@@ -36,7 +36,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict
 from osgeo import gdal 
-from .maskingCloudL1C import applyCloudMasking
+
 from .downloadBands import downloadL1CBands
 from .mosaic import SimpleSentinel2Mosaic
 
@@ -995,6 +995,8 @@ class s2CloudMask:
         self.dockwidget.labelGuide.setVisible(False)
 
     def cloudMosaic(self):
+        from .maskingCloudL1C import applyCloudMasking
+
         progress_dialog = DownloadProgressDialog(self.iface.mainWindow())
         progress_dialog.show()
         
@@ -1172,6 +1174,8 @@ class s2CloudMask:
         self.writeAndClose(self.cdseId, self.cdseSecret)
 
     def cloudMasking(self): 
+        from .maskingCloudL1C import applyCloudMasking
+        
         qdate = self.selectedDate
         min_date = datetime(qdate.year(), qdate.month(),qdate.day())
         max_date = min_date + timedelta(days = 1)
